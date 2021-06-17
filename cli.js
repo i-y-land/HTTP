@@ -1,11 +1,5 @@
-
-import { serve } from "./library/server.js";
-import {
-  decodeRequest,
-  encodeResponse,
-  findIndexOfSequence,
-  readLine
-} from "./library/utilities.js";
+import { serve, serveStatic } from "./library/server.js";
+import { findIndexOfSequence, readLine } from "./library/utilities.js";
 
 const $decoder = new TextDecoder();
 const decode = $decoder.decode.bind($decoder);
@@ -61,31 +55,7 @@ if (import.meta.main) {
   const logLevel = (await Deno.permissions.query({ name: "env", variable: "LOG_LEVEL" })).state === "granted" && Deno.env.get("LOG_LEVEL") || "LOG";
   serve(
     Deno.listen({ port }),
-    log(
-      "Test",
-      (xs) => {
-        const { method, path } = decodeRequest(xs);
-
-        if (method === "GET" && path === "/")
-          return encodeResponse({
-            body: encode("Hello, World"),
-            headers: {
-              "Content-Length": 12,
-              "Content-Type": "text/plain"
-            },
-            statusCode: 200
-          });
-
-        return encodeResponse({
-          body: new Uint8Array(0),
-          headers: {
-            "Content-Length": 0
-          },
-          statusCode: 404
-        });
-      },
-      { logLevel, noColor }
-    )
+    log("Static", serveStatic, { logLevel, noColor })
   )
     .catch(e => console.error(e));
 }
