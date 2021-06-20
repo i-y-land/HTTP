@@ -17,6 +17,28 @@ Deno.test(
 );
 
 Deno.test(
+  "concat: Large file chunks",
+  async () => {
+    const r = await Deno.open(`${Deno.cwd()}/library/assets_test/image.png`);
+    const chunks = [];
+    let n = 1024;
+
+    while (n === 1024) {
+      const xs = new Uint8Array(1024);
+      n = await Deno.read(r.rid, xs);
+      chunks.push((n < 1024) ? xs.subarray(0, n) : xs);
+    }
+
+    assertEquals(
+      concat(...chunks),
+      await Deno.readFile(`${Deno.cwd()}/library/assets_test/image.png`)
+    );
+
+    Deno.close(r.rid);
+  }
+);
+
+Deno.test(
   "findIndexOfSequence",
   () => {
     let i = findIndexOfSequence(encode("GET / HTTP/1.1"), encode("HTTP"));

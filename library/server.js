@@ -1,5 +1,5 @@
 import { mimeTypes } from "./mime-types.js";
-import { decodeRequest, encodeResponse } from "./utilities.js";
+import { concat, decodeRequest, encodeResponse } from "./utilities.js";
 
 const $encoder = new TextEncoder();
 const encode = $encoder.encode.bind($encoder);
@@ -35,11 +35,17 @@ export const serveStatic = async xs => {
 
 export const serve = async (listener, f) => {
   for await (const connection of listener) {
-    let xs = new Uint8Array(1024);
-    const n = await Deno.read(connection.rid, xs);
+    const chunks = [];
+    let n = 1024;
+
+    while (n === 1024) {
+      let xs = new Uint8Array(1024);
+      n = await Deno.read(connection.rid, xs);
+      chunks.push((n < 1024) ? xs.subarray(0, n) : xs);
+    }
 
     try {
-      const ys = await f(xs.subarray(0, n));
+      const ys = await f(concat(...chunks));
 
       if (!ys || !ys.byteLength) throw new Error(`The Request handler function should return a TypedArray, got ${typeof ys}.`);
 

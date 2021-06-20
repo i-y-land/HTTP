@@ -70,9 +70,9 @@ export const decodeRequest = (xs, bodyDecoder = x => x) => {
   return request;
 };
 
-export const concat = (...collection) => {
-  const zs = new Uint8Array(collection.reduce((xs, ys) => xs.byteLength + ys.byteLength), 0);
-  collection.reduce((i, xs) => zs.set(xs, i) || i + xs.byteLength, 0);
+export const concat = (...chunks) => {
+  const zs = new Uint8Array(chunks.reduce((z, ys) => z + ys.byteLength, 0));
+  chunks.reduce((i, xs) => zs.set(xs, i) || i + xs.byteLength, 0);
   return zs;
 };
 
