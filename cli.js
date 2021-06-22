@@ -1,47 +1,52 @@
-import { serve } from "./server.js";
-
-const $decoder = new TextDecoder();
-const decode = $decoder.decode.bind($decoder);
-const $encoder = new TextEncoder();
-const encode = $encoder.encode.bind($encoder);
+import { serve } from "./library/server.js";
+import {
+  encode,
+  parseRequest,
+  stringifyResponse,
+} from "./library/utilities.js";
 
 if (import.meta.main) {
   const port = Number(Deno.args[0]) || 8080;
   serve(
     Deno.listen({ port }),
     (xs) => {
-      const request = decode(xs);
-      const [ requestLine, ...lines ] = request.split("\r\n");
-      const [ method, path ] = requestLine.split(" ");
-      const separatorIndex = lines.findIndex(l => l === "");
-      const headers = lines
-        .slice(0, separatorIndex)
-        .map(l => l.split(": "))
-        .reduce(
-          (hs, [ key, value ]) =>
-            Object.defineProperty(
-              hs,
-              key.toLowerCase(),
-              { enumerable: true, value, writable: false }
-            ),
-          {}
-        );
+      const request = parseRequest(xs);
 
-      if (method === "GET" && path === "/") {
-        if (headers.accept.includes("*/*") || headers.accept.includes("plain/text"))
-          return encode(
-            `HTTP/1.1 200 OK\r\nContent-Length: 12\r\nContent-Type: text/plain\r\n\r\nHello, World`
+      if (request.method === "GET" && request.path === "/") {
+        if (
+          request.headers.accept.includes("*/*") ||
+          request.headers.accept.includes("plain/text")
+        ) {
+          return Promise.resolve(
+            encode(
+              stringifyResponse({
+                body: "Hello, World",
+                headers: {
+                  "content-length": 12,
+                  "content-type": "text/plain",
+                },
+                statusCode: 200,
+              }),
+            ),
           );
-        else
-          return encode(
-            `HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n`
+        } else {
+          return Promise.resolve(
+            encode(stringifyResponse({ statusCode: 204 })),
           );
+        }
       }
 
-      return encode(
-        `HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n`
+      return Promise.resolve(
+        encode(
+          stringifyResponse({
+            headers: {
+              "content-length": 0,
+            },
+            statusCode: 404,
+          }),
+        ),
       );
-    }
+    },
   )
-    .catch(e => console.error(e));
+    .catch((e) => console.error(e));
 }
