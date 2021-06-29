@@ -1,125 +1,64 @@
-import { assertEquals } from "https://deno.land/std@0.97.0/testing/asserts.ts";
-import { concat, findIndexOfSequence, decodeRequest, encodeResponse, parseHeaderKey } from "./utilities.js";
-
-const $decoder = new TextDecoder();
-const decode = $decoder.decode.bind($decoder);
-const $encoder = new TextEncoder();
-const encode = $encoder.encode.bind($encoder);
+import { assertEquals } from "https://deno.land/std@0.99.0/testing/asserts.ts"
+import { encode, normalizeHeaderKey, parseRequest, stringifyResponse } from "./utilities.js";
 
 Deno.test(
-  "concat",
+  "parseRequest",
   () => {
-    assertEquals(
-      concat(encode("Hello"), encode("World")),
-      new Uint8Array([ ...encode("Hello"), ...encode("World") ])
-    );
-  }
-);
-
-Deno.test(
-  "concat: Large file chunks",
-  async () => {
-    const r = await Deno.open(`${Deno.cwd()}/library/assets_test/image.png`);
-    const chunks = [];
-    let n = 1024;
-
-    while (n === 1024) {
-      const xs = new Uint8Array(1024);
-      n = await Deno.read(r.rid, xs);
-      chunks.push((n < 1024) ? xs.subarray(0, n) : xs);
-    }
-
-    assertEquals(
-      concat(...chunks),
-      await Deno.readFile(`${Deno.cwd()}/library/assets_test/image.png`)
+    const request = parseRequest(
+      encode(`GET / HTTP/1.1\r\nHost: localhost:8080\r\nAccept: */*\r\n\r\n`),
     );
 
-    Deno.close(r.rid);
+    assertEquals(request.method, "GET");
+    assertEquals(request.path, "/");
+    assertEquals(request.headers.host, "localhost:8080");
+    assertEquals(request.headers.accept, "*/*");
   }
 );
 
 Deno.test(
-  "findIndexOfSequence",
+  "parseRequest: with body",
   () => {
-    let i = findIndexOfSequence(encode("GET / HTTP/1.1"), encode("HTTP"));
+      const request = parseRequest(
+        encode(
+          `POST /users HTTP/1.1\r\nHost: localhost:8080\r\nAccept: */*\r\n\r\n{"fullName":"John Doe"}`,
+        ),
+      );
 
-    assertEquals(i, 6);
-  }
+      assertEquals(request.method, "POST");
+      assertEquals(request.path, "/users");
+      assertEquals(request.headers.host, "localhost:8080");
+      assertEquals(request.headers.accept, "*/*");
+      assertEquals(request.body, `{"fullName":"John Doe"}`);
+  },
 );
 
 Deno.test(
-  "decodeRequest",
+  "normalizeHeaderKey",
   () => {
-    const xs = encode(`GET / HTTP/1.1\nHost: localhost:8080\nUser-Agent: test\nAccept: */*\r\n\r\n`);
-    const request = decodeRequest(xs);
-
-    assertEquals(
-      request,
-      {
-        headers: {
-          accept: "*/*",
-          host: "localhost:8080",
-          ["user-agent"]: "test"
-        },
-        method: "GET",
-        path: "/"
-      }
-    );
-  }
+    assertEquals(normalizeHeaderKey("link"), "Link");
+    assertEquals(normalizeHeaderKey("Location"), "Location");
+    assertEquals(normalizeHeaderKey("content-type"), "Content-Type");
+    assertEquals(normalizeHeaderKey("cache-Control"), "Cache-Control");
+  },
 );
 
 Deno.test(
-  "decodeRequest: body",
+  "stringifyResponse",
   () => {
-    const xs = encode(`POST /users HTTP/1.1\nHost: localhost:8080\nUser-Agent: test\nAccept: */*\nContent-Type: application/json\nContent-Length: 23\r\n\r\n{"fullName":"John Doe"}`);
-    const request = decodeRequest(xs);
-
-    assertEquals(
-      request,
-      {
-        body: encode(JSON.stringify({fullName: "John Doe"})),
-        headers: {
-          accept: "*/*",
-          ["content-length"]: "23",
-          ["content-type"]: "application/json",
-          host: "localhost:8080",
-          ["user-agent"]: "test"
-        },
-        method: "POST",
-        path: "/users"
-      }
-    );
-  }
-);
-
-Deno.test(
-  "encodeResponse",
-  () => {
-    // `HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ${request.body.length}\r\n\r\n${request.body}`
-    const xs = encode(JSON.stringify({ fullName: "John Doe" }));
+    const body = JSON.stringify({ fullName: "John Doe" });
     const response = {
-      body: xs,
+      body,
       headers: {
         ["content-type"]: "application/json",
-        ["content-length"]: xs.byteLength,
+        ["content-length"]: body.length,
       },
-      statusCode: 200
+      statusCode: 200,
     };
-    const ys = encodeResponse(response);
+    const r = stringifyResponse(response);
 
     assertEquals(
-      ys,
-      encode(`HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 23\r\n\r\n{"fullName":"John Doe"}`),
-    )
-  }
-);
-
-Deno.test(
-  "parseHeaderKey",
-  () => {
-    assertEquals(parseHeaderKey("link"), "Link");
-    assertEquals(parseHeaderKey("Location"), "Location");
-    assertEquals(parseHeaderKey("content-type"), "Content-Type");
-    assertEquals(parseHeaderKey("cache-Control"), "Cache-Control");
-  }
+      r,
+      `HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 23\r\n\r\n{"fullName":"John Doe"}`,
+    );
+  },
 );

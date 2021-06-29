@@ -61,5 +61,5 @@ export const statusCodes = {
   507: "507 Insufficient Storage",
   508: "508 Loop Detected",
   510: "510 Not Extended",
-  511: "511 Network Authentication Required"
+  511: "511 Network Authentication Required",
 };

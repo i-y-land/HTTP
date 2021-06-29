@@ -1,52 +1,41 @@
-import { assert, assertEquals } from "https://deno.land/std@0.97.0/testing/asserts.ts";
+import { assertEquals } from "https://deno.land/std@0.97.0/testing/asserts.ts";
 
-import { concat, decodeRequest, findIndexOfSequence } from "./utilities.js";
+import { decode, encode, parseRequest } from "./utilities.js";
 import { serve } from "./server.js";
 
-const CR = "\r".charCodeAt(0);
-const LF = "\n".charCodeAt(0);
-
-const $decoder = new TextDecoder();
-const decode = $decoder.decode.bind($decoder);
-const $encoder = new TextEncoder();
-const encode = $encoder.encode.bind($encoder);
-
-
-const factorizeConnectionMock = async p => {
+const factorizeConnectionMock = (p) => {
   let i = 0;
 
   return {
     p,
     rid: p.rid,
     [Symbol.asyncIterator]() {
-
       return {
-        async next() {
+        next() {
           if (i > 0) {
-
             return Promise.resolve({ done: true });
           }
           i++;
           return Promise.resolve({ value: p, done: false });
         },
-        values: null
-      }
-    }
+        values: null,
+      };
+    },
   };
 };
 
 Deno.test(
   "serve",
   async () => {
-    const r = await Deno.open(`${Deno.cwd()}/.buffer`, { create: true, read: true, write: true });
+    const r = await Deno.open(`${Deno.cwd()}/.buffer`, {
+      create: true,
+      read: true,
+      write: true,
+    });
 
-    const xs = await Deno.readFile(`${Deno.cwd()}/library/assets_test/image.png`);
-    const ys = concat(
-      encode(`GET / HTTP/1.1\r\nContent-Type: image/png\r\nContent-Length: ${xs.byteLength}\r\n\r\n`),
-      xs
-    );
+    const xs = encode(`GET /users/1 HTTP/1.1\r\nAccept: */*\r\n\r\n`);
 
-    await Deno.write(r.rid, ys);
+    await Deno.write(r.rid, xs);
 
     await Deno.seek(r.rid, 0, Deno.SeekMode.Start);
 
@@ -54,34 +43,33 @@ Deno.test(
 
     await serve(
       connectionMock,
-      async zs => {
-        const request = decodeRequest(zs);
+      async (ys) => {
+        const request = parseRequest(ys);
 
         assertEquals(
           request.method,
           "GET",
-          `The request method was expected to be \`GET\`. Got \`${request.method}\``
+          `The request method was expected to be \`GET\`. Got \`${request.method}\``,
         );
         assertEquals(
           request.path,
-          "/",
-          `The request path was expected to be \`/\`. Got \`${request.path}\``
+          "/users/1",
+          `The request path was expected to be \`/users/1\`. Got \`${request.path}\``,
         );
         assertEquals(
-          request.headers["content-length"],
-          String(xs.byteLength),
-          `The request content length was expected to be \`${zs.byteLength}\`. Got \`${request["content-length"]}\``
+          request.headers.accept,
+          "*/*",
         );
-        assertEquals(request.headers["content-type"], "image/png");
 
         await Deno.ftruncate(r.rid, 0);
         await Deno.seek(r.rid, 0, Deno.SeekMode.Start);
 
-        return concat(
-          encode(`HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: ${xs.byteLength}\r\n\r\n`),
-          zs
+        const body = JSON.stringify({ "fullName": "John Doe" });
+
+        return encode(
+          `HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: ${body.length}\r\n\r\n${body}`,
         );
-      }
+      },
     );
 
     await Deno.seek(r.rid, 0, Deno.SeekMode.Start);
@@ -89,14 +77,12 @@ Deno.test(
     const zs = new Uint8Array(1024);
     const n = await Deno.read(r.rid, zs);
 
-    // The file would be larger than a KB, so the Array should be filled.
-    assertEquals(n, 1024, `The handler might have thrown: ${decode(zs)}`);
     assertEquals(
-      decode(zs.subarray(0, findIndexOfSequence(zs, new Uint8Array([ CR, LF, CR, LF ])) + 4)),
-      `HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: ${xs.byteLength}\r\n\r\n`
+      decode(zs.subarray(0, n)),
+      `HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: 23\r\n\r\n{"fullName":"John Doe"}`,
     );
 
     Deno.remove(`${Deno.cwd()}/.buffer`);
     Deno.close(r.rid);
-  }
+     },
 );
