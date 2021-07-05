@@ -1,14 +1,20 @@
 import { assertEquals } from "https://deno.land/std@0.97.0/testing/asserts.ts";
 
-import { decode, encode, parseRequest } from "./utilities.js";
+import {
+  decode,
+  decodeRequest,
+  encode,
+  encodeResponse,
+  readAll,
+} from "./utilities.js";
 import { serve } from "./server.js";
 
-const factorizeConnectionMock = (p) => {
+const factorizeConnectionMock = (r) => {
   let i = 0;
 
   return {
-    p,
-    rid: p.rid,
+    r,
+    rid: r.rid,
     [Symbol.asyncIterator]() {
       return {
         next() {
@@ -16,7 +22,7 @@ const factorizeConnectionMock = (p) => {
             return Promise.resolve({ done: true });
           }
           i++;
-          return Promise.resolve({ value: p, done: false });
+          return Promise.resolve({ value: r, done: false });
         },
         values: null,
       };
@@ -43,8 +49,8 @@ Deno.test(
 
     await serve(
       connectionMock,
-      async (ys) => {
-        const request = parseRequest(ys);
+      async (r) => {
+        const request = decodeRequest(await readAll(r));
 
         assertEquals(
           request.method,
@@ -64,25 +70,30 @@ Deno.test(
         await Deno.ftruncate(r.rid, 0);
         await Deno.seek(r.rid, 0, Deno.SeekMode.Start);
 
-        const body = JSON.stringify({ "fullName": "John Doe" });
-
-        return encode(
-          `HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: ${body.length}\r\n\r\n${body}`,
+        await r.write(
+          encodeResponse({
+            body: encode(JSON.stringify({ "fullName": "John Doe" })),
+            headers: {
+              "content-length": 23,
+              "content-type": "application/json",
+            },
+            statusCode: 200,
+          }),
         );
       },
     );
 
-    await Deno.seek(r.rid, 0, Deno.SeekMode.Start);
+    const s = await Deno.open(`${Deno.cwd()}/.buffer`, { read: true });
 
     const zs = new Uint8Array(1024);
-    const n = await Deno.read(r.rid, zs);
+    const n = await Deno.read(s.rid, zs);
 
     assertEquals(
       decode(zs.subarray(0, n)),
-      `HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: 23\r\n\r\n{"fullName":"John Doe"}`,
+      `HTTP/1.1 200 OK\r\nContent-Length: 23\r\nContent-Type: application/json\r\n\r\n{"fullName":"John Doe"}`,
     );
 
-    Deno.remove(`${Deno.cwd()}/.buffer`);
-    Deno.close(r.rid);
+    Deno.close(s.rid);
+    await Deno.remove(`${Deno.cwd()}/.buffer`);
   },
 );

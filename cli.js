@@ -1,51 +1,42 @@
-import { serve } from "./library/server.js";
 import {
-  encode,
-  parseRequest,
-  stringifyResponse,
+  decode,
+  encodeResponse,
+  factorizeBuffer,
+  readLine,
 } from "./library/utilities.js";
+import { receiveStaticFile, sendStaticFile, serve } from "./library/server.js";
 
 if (import.meta.main) {
   const port = Number(Deno.args[0]) || 8080;
+  const sourcePath =
+    (await Deno.permissions.query({ name: "env", variable: "SOURCE_PATH" }))
+      .state === "granted" && Deno.env.get("SOURCE_PATH") ||
+    `${Deno.cwd()}/library/assets_test`;
+  const targetPath =
+    (await Deno.permissions.query({ name: "env", variable: "TARGET_PATH" }))
+      .state === "granted" && Deno.env.get("TARGET_PATH") ||
+    `${Deno.cwd()}/library/assets_test`;
   serve(
     Deno.listen({ port }),
-    (xs) => {
-      const request = parseRequest(xs);
+    async (connection) => {
+      const r = factorizeBuffer(connection);
 
-      if (request.method === "GET" && request.path === "/") {
-        if (
-          request.headers.accept.includes("*/*") ||
-          request.headers.accept.includes("plain/text")
-        ) {
-          return Promise.resolve(
-            encode(
-              stringifyResponse({
-                body: "Hello, World",
-                headers: {
-                  "content-length": 12,
-                  "content-type": "text/plain",
-                },
-                statusCode: 200,
-              }),
-            ),
-          );
-        } else {
-          return Promise.resolve(
-            encode(stringifyResponse({ statusCode: 204 })),
-          );
-        }
+      const xs = new Uint8Array(1024);
+      const reader = r.getReader();
+      await reader.peek(xs);
+      const [ method ] = decode(readLine(xs)).split(" ");
+
+      if (method !== "GET" && method !== "POST" && method !== "HEAD") {
+        return connection.write(
+          encodeResponse({ statusCode: 400 }),
+        );
       }
 
-      return Promise.resolve(
-        encode(
-          stringifyResponse({
-            headers: {
-              "content-length": 0,
-            },
-            statusCode: 404,
-          }),
-        ),
-      );
+      if (method === "POST") {
+        return receiveStaticFile(r, { targetPath });
+      } else {
+        return sendStaticFile(r, { sourcePath });
+      }
     },
   )
     .catch((e) => console.error(e));
